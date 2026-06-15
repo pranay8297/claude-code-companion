@@ -1,0 +1,27 @@
+{
+  "name": "claude-code-companion",
+  "version": "0.1.8",
+  "description": "Use Claude Code from Codex for review, rescue, and delegated tasks.",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Claude Code Companion",
+    "shortDescription": "Delegate Codex work to Claude Code.",
+    "longDescription": "A local companion plugin that lets Codex call the installed Claude Code CLI for read-only reviews, adversarial reviews, write-capable rescue tasks, and background jobs.",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Ask Claude to review my current changes.",
+      "Delegate this UI task to Claude Code.",
+      "Check Claude task status."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

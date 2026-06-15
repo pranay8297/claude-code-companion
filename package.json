@@ -1,0 +1,41 @@
+{
+  "name": "@indianaprado/claude-code-companion",
+  "version": "0.1.8",
+  "private": false,
+  "description": "Claude Code Companion MCP server for Codex.",
+  "type": "module",
+  "bin": {
+    "claude-code-companion": "scripts/claude-mcp-server.mjs",
+    "claude-code-companion-cli": "scripts/claude-companion.mjs"
+  },
+  "files": [
+    ".codex-plugin/",
+    ".mcp.json",
+    "README.md",
+    "scripts/",
+    "skills/"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "codex",
+    "mcp",
+    "claude-code",
+    "claude",
+    "agent"
+  ],
+  "author": "Local developer",
+  "license": "MIT",
+  "scripts": {
+    "setup": "node scripts/claude-companion.mjs setup",
+    "status": "node scripts/claude-companion.mjs status",
+    "test:syntax": "find scripts -name '*.mjs' -exec node --check {} \\;",
+    "supply-chain:check": "node scripts/audit-package.mjs",
+    "test": "npm run supply-chain:check && npm run test:syntax",
+    "pack:dry": "npm pack --dry-run"
+  }
+}
