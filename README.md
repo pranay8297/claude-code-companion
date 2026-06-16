@@ -27,6 +27,20 @@ codex mcp add claude-code-companion npx -y @indianaprado/claude-code-companion
 That command adds a global Codex MCP server entry named `claude-code-companion`.
 Codex will start the MCP server with `npx` when needed.
 
+Recommended: set a longer MCP tool timeout so blocking Claude Code tasks are not cancelled early.
+Claude can legitimately spend several minutes inspecting a repo, editing files, and running
+validation. In `~/.codex/config.toml`, configure the server like this:
+
+```toml
+[mcp_servers.claude-code-companion]
+command = "npx"
+args = ["-y", "@indianaprado/claude-code-companion"]
+tool_timeout_sec = 1800
+```
+
+Restart Codex after editing the config. `1800` seconds gives the Claude harness up to 30 minutes for
+one blocking tool call while preserving normal foreground behavior.
+
 For a local unpublished checkout:
 
 ```bash
