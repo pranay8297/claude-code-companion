@@ -89,6 +89,9 @@ node scripts/claude-companion.mjs adversarial-review "focus on UX and frontend s
 node scripts/claude-companion.mjs rescue --read-only "investigate why the dashboard is slow"
 node scripts/claude-companion.mjs rescue --final-response concise "research and summarize the issue briefly"
 node scripts/claude-companion.mjs rescue --resume --session-id <uuid> "continue this Claude session"
+node scripts/claude-companion.mjs rescue --fresh "start a new Claude session for this task"
+node scripts/claude-companion.mjs compact
+node scripts/claude-companion.mjs compact --session-id <uuid>
 node scripts/claude-companion.mjs rescue --background "implement the mock frontend"
 node scripts/claude-companion.mjs status
 node scripts/claude-companion.mjs result <job-id>
@@ -109,6 +112,7 @@ The bundled MCP server exposes:
 - `review`
 - `adversarial_review`
 - `rescue`
+- `compact`
 - `status`
 - `result`
 - `cancel`
@@ -201,7 +205,27 @@ advertises `--effort`; otherwise it is ignored so older or changed CLIs do not f
 
 Session controls:
 
-- `resume: true` resumes the most recent Claude conversation in the current directory.
+- By default, the companion resumes the last successful Claude session recorded for the workspace.
+- `fresh: true` starts a new Claude session instead of auto-resuming.
 - `resume: true` plus `sessionId` resumes that exact Claude session.
-- `sessionId` without `resume` starts or uses that exact session id.
+- `sessionId` without `resume: false` also resumes that exact Claude session.
+- `resume: false` starts a fresh session unless `sessionId` is also supplied.
+- `sessionId` plus `resume: false` starts or uses that exact session id without `--resume`.
 - `forkSession: true` is passed through to Claude CLI with resume; behavior depends on the installed CLI.
+
+Session transition behavior:
+
+- The companion does not maintain its own long-lived Claude conversation layer.
+- Each tool call invokes `claude -p` and stores the returned Claude `session_id` in the job result.
+- On the next call in the same workspace, the companion auto-resumes the last successful stored
+  `session_id` unless `fresh: true` or `resume: false` is supplied.
+- Resume, fork, and context compaction behavior are delegated to the installed Claude CLI.
+- The installed Claude CLI currently exposes resume/session flags in `claude --help`; compaction is
+  available as the `/compact` slash command rather than a `--compact` flag.
+- The companion also exposes `compact`, which runs Claude Code's `/compact` slash command as a
+  top-level Claude prompt against the last known workspace session or an explicit `sessionId`.
+- If Claude reports that a session cannot continue because it is expired, full, or otherwise ended,
+  the companion currently records that run as failed and surfaces Claude's stderr/stdout. It does not
+  automatically summarize the old session and start a replacement session.
+- For deliberate handoff, use `fresh: true`, or ask Claude to produce a compact handoff summary before
+  the session is exhausted and pass that summary into the next task.

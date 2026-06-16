@@ -38,6 +38,7 @@ export function renderTaskResult(job, result) {
     `Job: ${job.id}`,
     `Status: ${result.status === 0 ? "completed" : "failed"}`,
     `Mode: ${job.mode ?? (job.readOnly ? "no_write" : "normal")}`,
+    job.sessionPolicy ? `Session policy: ${job.sessionPolicy}` : "",
     result.sessionId ? `Claude session: ${result.sessionId}` : "",
     result.costUsd != null ? `Cost: $${result.costUsd}` : "",
     "",
@@ -57,10 +58,10 @@ export function renderStatus(jobs) {
   if (jobs.length === 0) {
     return "No Claude jobs found for this workspace.\n";
   }
-  const rows = ["| Job | Kind | Status | Phase | Mode | Elapsed | Summary |", "| --- | --- | --- | --- | --- | --- | --- |"];
+  const rows = ["| Job | Kind | Status | Phase | Mode | Session | Elapsed | Summary |", "| --- | --- | --- | --- | --- | --- | --- | --- |"];
   for (const job of jobs) {
     rows.push(
-      `| ${job.id} | ${job.kind ?? ""} | ${job.status ?? ""} | ${job.phase ?? ""} | ${job.mode ?? (job.readOnly ? "no_write" : "normal")} | ${elapsed(job)} | ${(job.summary ?? "").replaceAll("|", "\\|")} |`
+      `| ${job.id} | ${job.kind ?? ""} | ${job.status ?? ""} | ${job.phase ?? ""} | ${job.mode ?? (job.readOnly ? "no_write" : "normal")} | ${job.sessionPolicy ?? ""} | ${elapsed(job)} | ${(job.summary ?? "").replaceAll("|", "\\|")} |`
     );
   }
   return `${rows.join("\n")}\n`;

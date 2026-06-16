@@ -38,6 +38,31 @@ function summarize(prompt) {
   return text.length > 96 ? `${text.slice(0, 93)}...` : text;
 }
 
+function latestSessionId(cwd) {
+  return recentJobs(cwd, true).find((job) => job.status === "completed" && job.sessionId)?.sessionId ?? null;
+}
+
+function sessionOptions(cwd, input = {}) {
+  if (input.fresh) {
+    return { resume: false, sessionId: input.sessionId, sessionPolicy: input.sessionId ? "fresh-explicit-session" : "fresh" };
+  }
+  if (input.sessionId) {
+    return {
+      resume: input.resume !== false,
+      sessionId: input.sessionId,
+      sessionPolicy: input.resume === false ? "explicit-session" : "explicit-resume"
+    };
+  }
+  if (input.resume === false) {
+    return { resume: false, sessionId: null, sessionPolicy: "fresh" };
+  }
+  const previousSessionId = latestSessionId(cwd);
+  if (previousSessionId) {
+    return { resume: true, sessionId: previousSessionId, sessionPolicy: "auto-resume" };
+  }
+  return { resume: false, sessionId: null, sessionPolicy: "new-workspace-session" };
+}
+
 export async function setupCommand(input = {}) {
   const cwd = path.resolve(input.cwd ?? process.cwd());
   const node = binaryStatus("node", ["--version"], { cwd });
@@ -66,6 +91,7 @@ async function executeClaudeJob(cwd, job, request) {
     readOnly: request.readOnly,
     resume: request.resume,
     sessionId: request.sessionId,
+    forkSession: request.forkSession,
     model: request.model,
     effort: request.effort,
     permissionMode: request.permissionMode,
@@ -111,7 +137,8 @@ async function runJobRequest(cwd, request, options = {}) {
     summary: request.summary,
     mode: request.mode,
     readOnly: request.readOnly,
-    background: request.background
+    background: request.background,
+    sessionPolicy: request.sessionPolicy
   });
   markJob(cwd, job.id, { request });
 
@@ -126,6 +153,7 @@ async function runJobRequest(cwd, request, options = {}) {
 
 export async function reviewCommand(input = {}) {
   const cwd = path.resolve(input.cwd ?? process.cwd());
+  const session = sessionOptions(cwd, input);
   const prompt = buildReviewPrompt(cwd, {
     scope: input.scope,
     base: input.base,
@@ -140,6 +168,10 @@ export async function reviewCommand(input = {}) {
     mode: input.mode ?? "no_write",
     readOnly: true,
     background: Boolean(input.background),
+    resume: session.resume,
+    sessionId: session.sessionId,
+    sessionPolicy: session.sessionPolicy,
+    forkSession: input.forkSession,
     model: input.model,
     effort: input.effort,
     permissionMode: input.permissionMode,
@@ -159,6 +191,7 @@ export async function rescueCommand(input = {}) {
   }
   const mode = input.mode ?? (input.readOnly ? "no_write" : null);
   const readOnly = mode === "no_write";
+  const session = sessionOptions(cwd, input);
   const prompt = buildRescuePrompt(input.prompt, { mode, readOnly, finalResponse: input.finalResponse });
   return runJobRequest(cwd, {
     kind: "task",
@@ -168,8 +201,9 @@ export async function rescueCommand(input = {}) {
     mode,
     readOnly,
     background: Boolean(input.background),
-    resume: Boolean(input.resume),
-    sessionId: input.sessionId,
+    resume: session.resume,
+    sessionId: session.sessionId,
+    sessionPolicy: session.sessionPolicy,
     forkSession: input.forkSession,
     model: input.model,
     effort: input.effort,
@@ -180,6 +214,29 @@ export async function rescueCommand(input = {}) {
     mcpConfig: input.mcpConfig,
     strictMcpConfig: input.strictMcpConfig,
     addDir: input.addDir
+  });
+}
+
+export async function compactCommand(input = {}) {
+  const cwd = path.resolve(input.cwd ?? process.cwd());
+  const sessionId = input.sessionId || latestSessionId(cwd);
+  if (!sessionId) {
+    throw new Error("No Claude session found to compact. Run a Claude task first or pass sessionId.");
+  }
+  return runJobRequest(cwd, {
+    kind: "compact",
+    title: "Claude Compact",
+    summary: `Compact Claude session ${sessionId}`,
+    prompt: "/compact",
+    mode: null,
+    readOnly: true,
+    background: Boolean(input.background),
+    resume: true,
+    sessionId,
+    sessionPolicy: input.sessionId ? "compact-explicit-resume" : "compact-auto-resume",
+    forkSession: false,
+    model: input.model,
+    effort: input.effort
   });
 }
 
@@ -254,6 +311,10 @@ async function main() {
       focus: positionals.join(" "),
       adversarial: command === "adversarial-review" || options.adversarial,
       background: options.background,
+      fresh: Boolean(options.fresh),
+      resume: options.resume == null ? undefined : Boolean(options.resume),
+      sessionId: options["session-id"],
+      forkSession: Boolean(options["fork-session"]),
       mode: options.mode,
       model: options.model,
       effort: options.effort,
@@ -276,7 +337,8 @@ async function main() {
       mode: options.mode,
       readOnly: Boolean(options["read-only"]) && !options.write,
       background: options.background,
-      resume: Boolean(options.resume),
+      fresh: Boolean(options.fresh),
+      resume: options.resume == null ? undefined : Boolean(options.resume),
       sessionId: options["session-id"],
       forkSession: Boolean(options["fork-session"]),
       model: options.model,
@@ -289,6 +351,17 @@ async function main() {
       mcpConfig: options["mcp-config"],
       strictMcpConfig: Boolean(options["strict-mcp-config"]),
       addDir: options["add-dir"]
+    });
+    output(asJson ? response : response.rendered, asJson);
+    return;
+  }
+  if (command === "compact") {
+    const response = await compactCommand({
+      cwd,
+      background: options.background,
+      sessionId: options["session-id"],
+      model: options.model,
+      effort: options.effort
     });
     output(asJson ? response : response.rendered, asJson);
     return;
@@ -309,7 +382,7 @@ async function main() {
     return;
   }
 
-  throw new Error("Usage: claude-companion.mjs setup|review|adversarial-review|rescue|status|result|cancel");
+  throw new Error("Usage: claude-companion.mjs setup|review|adversarial-review|rescue|compact|status|result|cancel");
 }
 
 if (isDirectRun()) {

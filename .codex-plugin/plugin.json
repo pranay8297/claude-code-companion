@@ -1,6 +1,6 @@
 {
   "name": "claude-code-companion",
-  "version": "0.1.8",
+  "version": "0.1.10",
   "description": "Use Claude Code from Codex for review, rescue, and delegated tasks.",
   "author": {
     "name": "Local developer"

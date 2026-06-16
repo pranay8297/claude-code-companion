@@ -2,6 +2,7 @@
 
 import {
   cancelCommand,
+  compactCommand,
   rescueCommand,
   resultCommand,
   reviewCommand,
@@ -15,6 +16,7 @@ const SERVER_INSTRUCTIONS = [
   "Use Claude Code Companion as a blocking foreground delegate unless the human explicitly asks for parallel/background work.",
   "Do not hurry to cancel a running Claude task. Before cancelling, consider the requested work, the repository size, and whether Claude is expected to inspect files, reason, edit, or run validation.",
   "For non-trivial implementation, review, or architecture tasks, be patient for a reasonable task-specific duration. Cancel only when the human asks, the process is clearly stuck, or there is concrete evidence that continuing is harmful.",
+  "Keep Claude session continuity by default. Omit fresh unless the human asks for a new session; the companion will auto-resume the last known workspace session when available.",
   "Do not pass optional behavior controls such as background, model, permissionMode, effort, or finalResponse unless the human asks for them or explicitly provides them."
 ].join(" ");
 
@@ -48,6 +50,13 @@ const capabilityProperties = {
   permissionMode: { type: "string", description: "Optional raw Claude --permission-mode. Prefer mode unless you need a CLI-specific value." }
 };
 
+const sessionProperties = {
+  fresh: { type: "boolean", description: "Start a new Claude session instead of auto-resuming the last known workspace session." },
+  resume: { type: "boolean", description: "Resume Claude session state. Omit to let the companion auto-resume the last known workspace session when available." },
+  sessionId: { type: "string", description: "Explicit Claude session id. With resume=false, create/use this exact session id without --resume." },
+  forkSession: { type: "boolean", description: "Pass through Claude CLI --fork-session when resuming. Behavior depends on the installed Claude CLI." }
+};
+
 const tools = [
   {
     name: "setup",
@@ -71,6 +80,7 @@ const tools = [
         background: { type: "boolean" },
         model: { type: "string", description: "Optional Claude model alias or full model name. Omit to let Claude CLI choose its current default/latest model." },
         effort: { type: "string", enum: ["low", "medium", "high", "xhigh", "max"], description: "Optional Claude effort hint. Forwarded only if the installed Claude CLI supports --effort." },
+        ...sessionProperties,
         ...capabilityProperties
       }
     }
@@ -88,6 +98,7 @@ const tools = [
         background: { type: "boolean" },
         model: { type: "string", description: "Optional Claude model alias or full model name. Omit to let Claude CLI choose its current default/latest model." },
         effort: { type: "string", enum: ["low", "medium", "high", "xhigh", "max"], description: "Optional Claude effort hint. Forwarded only if the installed Claude CLI supports --effort." },
+        ...sessionProperties,
         ...capabilityProperties
       },
       required: ["focus"]
@@ -103,9 +114,7 @@ const tools = [
         prompt: { type: "string" },
         readOnly: { type: "boolean" },
         background: { type: "boolean" },
-        resume: { type: "boolean" },
-        sessionId: { type: "string", description: "With resume=true, resume this Claude session id. With resume=false, create/use this exact new session id." },
-        forkSession: { type: "boolean", description: "Pass through Claude CLI --fork-session when resuming. Behavior depends on the installed Claude CLI." },
+        ...sessionProperties,
         model: { type: "string", description: "Optional Claude model alias or full model name. Omit to let Claude CLI choose its current default/latest model." },
         effort: { type: "string", enum: ["low", "medium", "high", "xhigh", "max"], description: "Optional Claude effort hint. Forwarded only if the installed Claude CLI supports --effort." },
         ...capabilityProperties
@@ -121,6 +130,20 @@ const tools = [
       properties: {
         cwd: { type: "string" },
         all: { type: "boolean" }
+      }
+    }
+  },
+  {
+    name: "compact",
+    description: "Run Claude Code /compact on the last known workspace session or an explicit session id.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cwd: { type: "string" },
+        sessionId: { type: "string", description: "Explicit Claude session id to compact. Omit to compact the last successful workspace session." },
+        background: { type: "boolean" },
+        model: { type: "string", description: "Optional Claude model alias or full model name. Omit to let Claude CLI choose its current default/latest model." },
+        effort: { type: "string", enum: ["low", "medium", "high", "xhigh", "max"], description: "Optional Claude effort hint. Forwarded only if the installed Claude CLI supports --effort." }
       }
     }
   },
@@ -239,6 +262,10 @@ async function callTool(name, args = {}) {
   if (name === "status") {
     return textResult(renderStatus(statusCommand(args)));
   }
+  if (name === "compact") {
+    const response = await compactCommand(args);
+    return textResult(response.rendered);
+  }
   if (name === "result") {
     const response = resultCommand(args);
     return textResult(renderStoredResult(response.job, response.stored));
@@ -262,7 +289,7 @@ async function handle(message) {
         result: {
           protocolVersion: PROTOCOL_VERSION,
           capabilities: { tools: {} },
-          serverInfo: { name: "claude-code-companion", version: "0.1.8" },
+          serverInfo: { name: "claude-code-companion", version: "0.1.10" },
           instructions: SERVER_INSTRUCTIONS
         }
       });

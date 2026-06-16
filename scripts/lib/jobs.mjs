@@ -17,6 +17,7 @@ export function createJob(cwd, values) {
     mode: values.mode ?? null,
     readOnly: Boolean(values.readOnly),
     background: Boolean(values.background),
+    sessionPolicy: values.sessionPolicy ?? null,
     createdAt: now()
   };
   writeJob(cwd, id, job);
