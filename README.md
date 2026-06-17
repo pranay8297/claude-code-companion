@@ -1,231 +1,142 @@
 # Claude Code Companion
 
-Use the installed Claude Code CLI from Codex through a local MCP server.
+Claude Code Companion is a local MCP server that lets Codex delegate work to the installed
+Claude Code CLI.
 
-This plugin mirrors the mode-driven shape of `openai/codex-plugin-cc` in reverse:
-
-- read-only `review`
-- read-only `adversarial_review`
-- write-capable `rescue`
-- foreground or background execution
-- `status`, `result`, and `cancel` job control
+It is useful when you want Codex to ask Claude Code for a second pass on planning, review,
+frontend implementation, debugging, or repository analysis while keeping control inside Codex.
 
 ## Requirements
 
-- Node.js
-- Claude Code CLI available as `claude`
+- Node.js 20 or newer
+- Claude Code CLI installed as `claude`
 - Claude Code authenticated in the same terminal environment
+- Codex CLI with MCP support
 
-## One-line Codex MCP Install
+## Install
 
-After publishing this package to npm:
+Add the MCP server to Codex:
 
 ```bash
-codex mcp add claude-code-companion npx -y @indianaprado/claude-code-companion
+codex mcp add claude-code-companion npx -y @indianaprado/claude-code-companion@latest
 ```
 
-That command adds a global Codex MCP server entry named `claude-code-companion`.
-Codex will start the MCP server with `npx` when needed.
+Restart Codex after adding the server.
 
-Recommended: set a longer MCP tool timeout so blocking Claude Code tasks are not cancelled early.
-Claude can legitimately spend several minutes inspecting a repo, editing files, and running
-validation. In `~/.codex/config.toml`, configure the server like this:
+## Recommended Timeout
+
+Claude Code tasks can legitimately take several minutes when they inspect a repository,
+edit files, or run validation. Configure a longer MCP tool timeout so Codex does not
+cancel blocking Claude calls too early.
+
+Edit `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.claude-code-companion]
 command = "npx"
-args = ["-y", "@indianaprado/claude-code-companion"]
+args = ["-y", "@indianaprado/claude-code-companion@latest"]
 tool_timeout_sec = 1800
 ```
 
-Restart Codex after editing the config. `1800` seconds gives the Claude harness up to 30 minutes for
-one blocking tool call while preserving normal foreground behavior.
+Restart Codex after changing the config. `1800` seconds gives a blocking Claude call up
+to 30 minutes while preserving foreground behavior.
 
-For a local unpublished checkout:
+## Update
 
-```bash
-codex mcp add claude-code-companion node /Users/pranaybindela/Desktop/work/claude-mcp/claude-code-companion/scripts/claude-mcp-server.mjs
-```
-
-Confirm the entry:
+To force Codex to use the latest published package, remove and re-add the MCP server:
 
 ```bash
-codex mcp list
-codex mcp get claude-code-companion
+codex mcp remove claude-code-companion
+codex mcp add claude-code-companion npx -y @indianaprado/claude-code-companion@latest
 ```
 
-## Publish To npm
+Then confirm that `tool_timeout_sec = 1800` is still present in `~/.codex/config.toml`
+and restart Codex.
 
-The package name is scoped because the unscoped `claude-code-companion` name is already taken on npm.
-The package intentionally has no npm dependencies, no install lifecycle scripts, and no external
-package imports. Check that before publishing:
+## Tools
 
-```bash
-npm run supply-chain:check
-```
+The MCP server exposes these tools:
 
-```bash
-npm login
-npm publish --access public
-```
+- `setup`: Check Node, Claude CLI, auth, and companion state directory.
+- `review`: Ask Claude Code to review the current git state.
+- `adversarial_review`: Ask Claude Code for a focused critique.
+- `rescue`: Delegate an arbitrary task to Claude Code.
+- `compact`: Run Claude Code `/compact` against the current or specified Claude session.
+- `status`: List recent and active Claude companion jobs.
+- `result`: Show stored output for a job.
+- `cancel`: Cancel an active background job.
 
-Dry-run before publishing:
+## Modes
 
-```bash
-npm publish --dry-run
-```
+`rescue`, `review`, and `adversarial_review` support optional mode controls:
 
-Check setup:
+- `normal`: No companion-imposed Claude permission mode.
+- `no_write`: Adds no-edit guidance and denies Claude edit tools.
+- `plan`: Uses Claude Code plan mode.
+- `auto_accept`: Uses Claude Code `acceptEdits` mode.
 
-```bash
-node scripts/claude-companion.mjs setup
-```
+Do not pass optional behavior controls unless you actually want them. The companion is
+designed to stay fluid: Codex decides when to delegate, and Claude Code runs with the
+explicit posture requested for that call.
 
-## Manual CLI
+## Session Behavior
 
-```bash
-node scripts/claude-companion.mjs review
-node scripts/claude-companion.mjs adversarial-review "focus on UX and frontend state bugs"
-node scripts/claude-companion.mjs rescue --read-only "investigate why the dashboard is slow"
-node scripts/claude-companion.mjs rescue --final-response concise "research and summarize the issue briefly"
-node scripts/claude-companion.mjs rescue --resume --session-id <uuid> "continue this Claude session"
-node scripts/claude-companion.mjs rescue --fresh "start a new Claude session for this task"
-node scripts/claude-companion.mjs compact
-node scripts/claude-companion.mjs compact --session-id <uuid>
-node scripts/claude-companion.mjs rescue --background "implement the mock frontend"
-node scripts/claude-companion.mjs status
-node scripts/claude-companion.mjs result <job-id>
-node scripts/claude-companion.mjs cancel <job-id>
-```
+The companion keeps Claude session continuity by default:
 
-When installed from npm, the helper CLI is available as:
+- It stores the `session_id` returned by Claude Code for successful jobs.
+- The next call in the same workspace auto-resumes the last successful session.
+- Pass `fresh: true` when you explicitly want a new Claude session.
+- Pass `sessionId` to resume or target a specific Claude session.
+- Use `compact` to run Claude Code `/compact` on the last known session or an explicit session.
 
-```bash
-npx -y -p @indianaprado/claude-code-companion claude-code-companion-cli setup
-```
+Context compaction is handled by Claude Code. The companion invokes `/compact` as a top-level
+Claude prompt when the `compact` tool is used.
 
-## MCP Tools
+## Capability Pass-Through
 
-The bundled MCP server exposes:
+The companion can pass through Claude CLI capability flags when supplied:
 
-- `setup`
-- `review`
-- `adversarial_review`
-- `rescue`
-- `compact`
-- `status`
-- `result`
-- `cancel`
-
-`rescue` adds no Claude permission mode unless you pass one. Pass `readOnly: true` or
-`mode: "no_write"` for investigation-only delegation.
-The plugin does not set a default Claude permission mode; pass `permissionMode: "plan"` only when
-you explicitly want Claude's plan mode.
-
-Modes only control edit posture:
-
-- `normal`: no plugin-imposed permission mode.
-- `no_write`: no plan mode; appends a no-edit instruction and denies Claude edit tools.
-- `plan`: passes Claude `--permission-mode plan`.
-- `auto_accept`: passes Claude `--permission-mode acceptEdits`.
-
-The same capability flags are available in every mode:
-
-- `finalResponse`
+- `model`
+- `effort`
 - `tools`
 - `allowedTools`
 - `disallowedTools`
 - `mcpConfig`
 - `strictMcpConfig`
 - `addDir`
+- `permissionMode`
+- `finalResponse`
 
-Use `mcpConfig` to give Claude access to local MCP servers for web/search, DBs, browser tools, or
-other local integrations. Avoid recursively giving Claude this `claude-code-companion` MCP unless you
-explicitly want nested Claude calls.
+For example, you can give Claude access to web/search tools, shell tools, local MCP servers,
+or extra directories when the task requires them.
 
-Project rule: do not impose behavior defaults. Optional controls should only be applied when the
-human asks for them or passes the corresponding parameter.
+## CLI Usage
 
-Execution rule: use blocking foreground calls unless the human asks for parallel/background work or
-explicitly wants a separate long-running job. `background: true` is for user-requested parallel
-delegation, not a default for implementation tasks.
-
-Cancellation rule: do not hurry to cancel a blocking Claude tool call. Estimate a reasonable wait
-from the task size: small smoke tests may finish quickly, while repo inspection, implementation,
-review, and validation can legitimately take several minutes. Cancel only when the human asks, the
-process is clearly stuck, or continuing would be harmful.
-
-`finalResponse` controls how much prose Claude returns at the end of the run only when explicitly
-provided:
-
-- omitted: add no final-response instruction; Claude responds normally.
-- `concise`: asks Claude for a compact outcome or focused review.
-- `minimal`: asks Claude to return only `DONE` or `BLOCKED: <short reason>` for task delegation.
-- `normal`: equivalent to omitted; no extra brevity instruction.
-
-Examples:
+You can also run the companion directly:
 
 ```bash
-# Allow web search/fetch in no-write mode.
-node scripts/claude-companion.mjs rescue --mode no_write \
-  --allowed-tools WebSearch,WebFetch \
-  "Use web search to summarize today's NBA Finals news."
-
-# Allow local shell programs in no-write mode.
-node scripts/claude-companion.mjs rescue --mode no_write \
-  --allowed-tools Bash \
-  "Run redis-cli PING and report the output."
-
-# Give Claude local MCP servers.
-node scripts/claude-companion.mjs rescue --mode no_write \
-  --mcp-config /path/to/claude-mcp-config.json \
-  --allowed-tools mcp__server_name__tool_name \
-  "Use the MCP tool and summarize the result."
+npx -y -p @indianaprado/claude-code-companion claude-code-companion-cli setup
+npx -y -p @indianaprado/claude-code-companion claude-code-companion-cli rescue --read-only "inspect this repo and summarize the architecture"
+npx -y -p @indianaprado/claude-code-companion claude-code-companion-cli compact
 ```
 
-Important: `no_write` blocks Claude's built-in `Edit` and `Write` tools and tells Claude not to edit.
-If you also grant unrestricted `Bash`, a shell command can still mutate files or external systems.
-For hard no-write isolation with Bash/DB tools, run Claude against read-only credentials or an external
-sandbox.
+From a local checkout:
 
-The plugin does not expose Claude CLI budget caps. It uses the Claude account already logged into
-your local `claude` CLI.
+```bash
+node scripts/claude-companion.mjs setup
+node scripts/claude-companion.mjs rescue --read-only "inspect this repo and summarize the architecture"
+node scripts/claude-companion.mjs compact
+```
 
-Cost shown by the plugin is not calculated locally. The plugin reads Claude CLI JSON fields such as
-`total_cost_usd` and displays them. Final prose is output tokens from Claude. To reduce that output,
-explicitly pass `finalResponse: "concise"` or `finalResponse: "minimal"`.
+## Publishing
 
-`model` is optional. When omitted, the plugin does not pass `--model`, so Claude CLI chooses its
-current default/latest model. On this machine, that currently selected `claude-opus-4-5-20251101`.
-When provided, `model` is forwarded to `claude --model`, so aliases such as `sonnet` and full model
-names such as `claude-sonnet-4-5-20250929` work when supported by the installed Claude CLI.
+Run publish commands from the package directory, not from the parent workspace:
 
-`effort` is optional and version-sensitive. The plugin forwards it only when the installed Claude CLI
-advertises `--effort`; otherwise it is ignored so older or changed CLIs do not fail the run.
+```bash
+cd claude-code-companion
+npm test
+npm publish --access public
+```
 
-Session controls:
-
-- By default, the companion resumes the last successful Claude session recorded for the workspace.
-- `fresh: true` starts a new Claude session instead of auto-resuming.
-- `resume: true` plus `sessionId` resumes that exact Claude session.
-- `sessionId` without `resume: false` also resumes that exact Claude session.
-- `resume: false` starts a fresh session unless `sessionId` is also supplied.
-- `sessionId` plus `resume: false` starts or uses that exact session id without `--resume`.
-- `forkSession: true` is passed through to Claude CLI with resume; behavior depends on the installed CLI.
-
-Session transition behavior:
-
-- The companion does not maintain its own long-lived Claude conversation layer.
-- Each tool call invokes `claude -p` and stores the returned Claude `session_id` in the job result.
-- On the next call in the same workspace, the companion auto-resumes the last successful stored
-  `session_id` unless `fresh: true` or `resume: false` is supplied.
-- Resume, fork, and context compaction behavior are delegated to the installed Claude CLI.
-- The installed Claude CLI currently exposes resume/session flags in `claude --help`; compaction is
-  available as the `/compact` slash command rather than a `--compact` flag.
-- The companion also exposes `compact`, which runs Claude Code's `/compact` slash command as a
-  top-level Claude prompt against the last known workspace session or an explicit `sessionId`.
-- If Claude reports that a session cannot continue because it is expired, full, or otherwise ended,
-  the companion currently records that run as failed and surfaces Claude's stderr/stdout. It does not
-  automatically summarize the old session and start a replacement session.
-- For deliberate handoff, use `fresh: true`, or ask Claude to produce a compact handoff summary before
-  the session is exhausted and pass that summary into the next task.
+The package intentionally has no npm dependencies, no install lifecycle scripts, and no
+external package imports. `npm test` checks those supply-chain constraints.
